@@ -91,6 +91,7 @@ jobs:
           flutter-version-file: pubspec.yaml
           architecture: x64
       - name: Decode and install certificate
+        if: ${{ secrets.ANDROID_KEYSTORE != '' && secrets.ANDROID_KEY_PROPERTIES != '' }}
         env:
           STORE_FILE: ${{ secrets.ANDROID_KEYSTORE }}
           PROPERTY_FILE: ${{ secrets.ANDROID_KEY_PROPERTIES }}
