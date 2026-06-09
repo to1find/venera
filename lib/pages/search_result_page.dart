@@ -36,21 +36,54 @@ class _SearchResultPageState extends State<SearchResultPage> {
 
   late String text;
 
+  late String _cleanKeyword;
+
+  RegExp? _regex;
+
   OverlayEntry? get suggestionOverlay => suggestionsController.entry;
 
   late _SuggestionsController suggestionsController;
+
+  void _parseRegex() {
+    _cleanKeyword = text;
+    _regex = null;
+    if (!text.endsWith(']')) return;
+    var closeBracket = text.length - 1;
+    var openBracket = text.lastIndexOf('[');
+    if (openBracket == -1) return;
+    var pattern = text.substring(openBracket + 1, closeBracket);
+    if (pattern.isEmpty) return;
+    var keyword = text.substring(0, openBracket).trim();
+    if (keyword.isEmpty) return;
+    try {
+      _regex = RegExp(pattern, caseSensitive: false);
+      _cleanKeyword = keyword;
+    } catch (_) {}
+  }
+
+  List<Comic> _filterComics(List<Comic> comics) {
+    if (_regex == null) return comics;
+    return comics.where((c) {
+      if (_regex!.hasMatch(c.title)) return true;
+      if (c.subtitle != null && _regex!.hasMatch(c.subtitle!)) return true;
+      if (_regex!.hasMatch(c.description)) return true;
+      if (c.tags != null && c.tags!.any((t) => _regex!.hasMatch(t))) return true;
+      return false;
+    }).toList();
+  }
 
   void search([String? text]) {
     if (text != null) {
       if (suggestionsController.entry != null) {
         suggestionsController.remove();
       }
-      text = checkAutoLanguage(text);
       setState(() {
-        this.text = text!;
+        this.text = text;
+        _parseRegex();
+        _cleanKeyword = checkAutoLanguage(_cleanKeyword);
       });
       appdata.addSearchHistory(text);
-      controller.currentText = text;
+      controller.currentText = this.text;
     }
   }
 
@@ -116,7 +149,9 @@ class _SearchResultPageState extends State<SearchResultPage> {
   @override
   void initState() {
     sourceKey = widget.sourceKey;
-    text = checkAutoLanguage(widget.text);
+    text = widget.text;
+    _parseRegex();
+    _cleanKeyword = checkAutoLanguage(_cleanKeyword);
     controller = SearchBarController(
       currentText: text,
       onSearch: search,
@@ -158,21 +193,29 @@ class _SearchResultPageState extends State<SearchResultPage> {
       ),
       loadPage: source!.searchPageData!.loadPage == null
           ? null
-          : (i) {
-              return source.searchPageData!.loadPage!(
-                text,
+          : (i) async {
+              var res = await source.searchPageData!.loadPage!(
+                _cleanKeyword,
                 i,
                 options,
               );
+              if (res.success && _regex != null) {
+                return Res(_filterComics(res.data), subData: res.subData);
+              }
+              return res;
             },
       loadNext: source.searchPageData!.loadNext == null
           ? null
-          : (i) {
-              return source.searchPageData!.loadNext!(
-                text,
+          : (i) async {
+              var res = await source.searchPageData!.loadNext!(
+                _cleanKeyword,
                 i,
                 options,
               );
+              if (res.success && _regex != null) {
+                return Res(_filterComics(res.data), subData: res.subData);
+              }
+              return res;
             },
     );
   }
@@ -198,7 +241,9 @@ class _SearchResultPageState extends State<SearchResultPage> {
           );
           if (!previousOptions.isEqualTo(options) ||
               previousSourceKey != sourceKey) {
-            text = checkAutoLanguage(controller.text);
+            text = controller.text;
+            _parseRegex();
+            _cleanKeyword = checkAutoLanguage(_cleanKeyword);
             controller.currentText = text;
             setState(() {});
           }
